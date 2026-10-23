@@ -1,0 +1,17 @@
+# 仓库内统一使用 LF，避免 Windows 端提交带来整文件 diff
+* text=auto eol=lf
+
+*.c   text eol=lf
+*.h   text eol=lf
+*.py  text eol=lf
+*.md  text eol=lf
+Makefile     text eol=lf
+.gitignore   text eol=lf
+
+# 二进制文件不做换行转换
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.pdf  binary
+*.zip  binary

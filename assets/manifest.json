@@ -1,0 +1,209 @@
+{
+  "source_project": "https://github.com/cusnaruto/UET_Danmaku",
+  "scope": "Selected visual assets only; no music, font, SDL dependency on target",
+  "generator": "tools/convert_assets.py",
+  "offline_dependency": {
+    "name": "Pillow",
+    "version": "12.3.0",
+    "license": "HPND"
+  },
+  "pixel_format": "RGB565 numeric uint16_t",
+  "digest_serialization": "row-major uint16 little-endian, exactly width*height*2 bytes",
+  "color_key": "0xF81F",
+  "transparency": "For sprites alpha<128 -> color key; alpha>=128 -> opaque RGB565. No blending.",
+  "opaque_key_collision_policy": "Replace 0xF81F with 0xF81E",
+  "resize": "nearest neighbor",
+  "total_pixel_bytes": 244284,
+  "notes": [
+    "GameSprite metadata is additional and depends on target pointer size/alignment.",
+    "Source reimu.png is 256x144: use exact 32x48 cells rather than original invalid 32x49 cells.",
+    "Source playerbullet.png is 42x23: use its left 21x23 arrow, not original 24x29 out-of-bounds rect.",
+    "asset_player is the public array: idle/left/right correspond to entries player_idle/player_left/player_right."
+  ],
+  "assets": [
+    {
+      "symbol": "asset_background",
+      "source": "assets/background.png",
+      "source_sha256": "e8600127311c8b38b465d5f78a79902514b129a1a6a215b82a35247f673efa58",
+      "source_dimensions": [
+        800,
+        920
+      ],
+      "crop_xyxy": [
+        0,
+        0,
+        800,
+        920
+      ],
+      "width": 400,
+      "height": 300,
+      "binary_bytes": 240000,
+      "sha256_rgb565_le": "de70498ef51ea42d32e4baae07fbfde48972e47b63e9c53d206543c7591edfab",
+      "opaque_pixels": 120000,
+      "transparent_pixels": 0,
+      "opaque_key_collisions_replaced": 0,
+      "uses_color_key": false
+    },
+    {
+      "symbol": "asset_player_idle",
+      "source": "assets/reimu.png",
+      "source_sha256": "edead057158f0ed9e73eeeb381fef9f592a1e3a1b1ff92184d295d58f0326129",
+      "source_dimensions": [
+        256,
+        144
+      ],
+      "crop_xyxy": [
+        0,
+        0,
+        32,
+        48
+      ],
+      "width": 16,
+      "height": 24,
+      "binary_bytes": 768,
+      "sha256_rgb565_le": "11232956c486aa2831c9f79e12dec59e6007cf574c6d4e2ddef1ba9b8537e85d",
+      "opaque_pixels": 149,
+      "transparent_pixels": 235,
+      "opaque_key_collisions_replaced": 0,
+      "uses_color_key": true
+    },
+    {
+      "symbol": "asset_player_left",
+      "source": "assets/reimu.png",
+      "source_sha256": "edead057158f0ed9e73eeeb381fef9f592a1e3a1b1ff92184d295d58f0326129",
+      "source_dimensions": [
+        256,
+        144
+      ],
+      "crop_xyxy": [
+        0,
+        48,
+        32,
+        96
+      ],
+      "width": 16,
+      "height": 24,
+      "binary_bytes": 768,
+      "sha256_rgb565_le": "40a60dcfeee89f6be455da4003e8f1444c38abb75d913c8a7f2c488a4cd1e131",
+      "opaque_pixels": 151,
+      "transparent_pixels": 233,
+      "opaque_key_collisions_replaced": 0,
+      "uses_color_key": true
+    },
+    {
+      "symbol": "asset_player_right",
+      "source": "assets/reimu.png",
+      "source_sha256": "edead057158f0ed9e73eeeb381fef9f592a1e3a1b1ff92184d295d58f0326129",
+      "source_dimensions": [
+        256,
+        144
+      ],
+      "crop_xyxy": [
+        0,
+        96,
+        32,
+        144
+      ],
+      "width": 16,
+      "height": 24,
+      "binary_bytes": 768,
+      "sha256_rgb565_le": "593e4ccf9d3493c0020d1192421bf2af0d3f6afa4d1055679324f6449e326053",
+      "opaque_pixels": 150,
+      "transparent_pixels": 234,
+      "opaque_key_collisions_replaced": 0,
+      "uses_color_key": true
+    },
+    {
+      "symbol": "asset_boss",
+      "source": "assets/flan.png",
+      "source_sha256": "bad2447fa9c54c36f757017eb99bfd2ed62364a41d4eb48587c875e52e4c9be5",
+      "source_dimensions": [
+        43,
+        69
+      ],
+      "crop_xyxy": [
+        0,
+        0,
+        43,
+        69
+      ],
+      "width": 21,
+      "height": 34,
+      "binary_bytes": 1428,
+      "sha256_rgb565_le": "232c50ee9127f3155c109c13033d1ea332e3f3f4539f5c7e485fe77f180c4588",
+      "opaque_pixels": 235,
+      "transparent_pixels": 479,
+      "opaque_key_collisions_replaced": 0,
+      "uses_color_key": true
+    },
+    {
+      "symbol": "asset_bullet_ring",
+      "source": "assets/flanBullet.png",
+      "source_sha256": "e1114e00db1a671433143ffaf8bac119878456883dff7a3f1aa0e6a34619968f",
+      "source_dimensions": [
+        16,
+        16
+      ],
+      "crop_xyxy": [
+        0,
+        0,
+        16,
+        16
+      ],
+      "width": 8,
+      "height": 8,
+      "binary_bytes": 128,
+      "sha256_rgb565_le": "7a7778e51d621dc251d9af10b5be165bf3e611d03f668f21a19282aba986342d",
+      "opaque_pixels": 30,
+      "transparent_pixels": 34,
+      "opaque_key_collisions_replaced": 0,
+      "uses_color_key": true
+    },
+    {
+      "symbol": "asset_bullet_sweep",
+      "source": "assets/flanbullet2.png",
+      "source_sha256": "f7beb2d95eb6f0b3f3c0dacb59b117a601e05dc55deafd77560aa195a5345e13",
+      "source_dimensions": [
+        10,
+        17
+      ],
+      "crop_xyxy": [
+        0,
+        0,
+        10,
+        17
+      ],
+      "width": 10,
+      "height": 17,
+      "binary_bytes": 340,
+      "sha256_rgb565_le": "5fe50f1d398a5a11f10e619a9b72686a03972cfb5446e1facf0186079a7013ae",
+      "opaque_pixels": 89,
+      "transparent_pixels": 81,
+      "opaque_key_collisions_replaced": 0,
+      "uses_color_key": true
+    },
+    {
+      "symbol": "asset_shot",
+      "source": "assets/playerbullet.png",
+      "source_sha256": "2e5d5c92d1c95888c42ba182b84c71fd03c4e6d832ad705198f8a1d00026bd59",
+      "source_dimensions": [
+        42,
+        23
+      ],
+      "crop_xyxy": [
+        0,
+        0,
+        21,
+        23
+      ],
+      "width": 6,
+      "height": 7,
+      "binary_bytes": 84,
+      "sha256_rgb565_le": "a4b0a7959cbc9c30dfdae2646b316279cad10b99c5b7742c9a5a68271b58ce76",
+      "opaque_pixels": 17,
+      "transparent_pixels": 25,
+      "opaque_key_collisions_replaced": 0,
+      "uses_color_key": true
+    }
+  ]
+}

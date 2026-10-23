@@ -1,0 +1,24 @@
+# ---- 构建产物（make 生成，可用 make clean 清除）----
+build/
+*.o
+*.obj
+*.d
+*.a
+*.elf
+*.map
+*.ppm
+
+# ---- Python（仅电脑端工具使用）----
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# ---- 编辑器与系统 ----
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+desktop.ini

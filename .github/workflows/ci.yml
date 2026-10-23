@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  host-build-and-test:
+    name: 电脑端构建与测试
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 显示工具链版本
+        run: |
+          cc --version | head -n 1
+          make --version | head -n 1
+          python3 --version
+
+      - name: 严格 C11 编译并运行单元测试
+        run: make test
+
+      - name: 构建无窗口版（只编译，不运行）
+        run: make headless
+
+      - name: Python 工具语法检查
+        run: python3 -m py_compile tools/convert_assets.py tools/uart_bridge.py tools/validate.py
+
+      - name: 确认构建产物未被提交
+        run: |
+          make clean
+          test -z "$(git status --porcelain)"
