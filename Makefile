@@ -5,17 +5,6 @@ CORE = src/game.c
 DRAW = src/render.c assets/assets.c
 OUT = build
 
-# Windows 上 make 可能用 cmd.exe，也可能用 sh.exe（MSYS2/Git Bash），
-# 而 sh 里没有 rmdir、cmd 里没有 rm。显式调用 cmd 可在两者下都成立；
-# $(OS) 未设置时（Linux / CI）使用 POSIX 命令。
-ifeq ($(OS),Windows_NT)
-  MKDIR_OUT = cmd /c if not exist "$(OUT)" mkdir "$(OUT)"
-  RMDIR_OUT = cmd /c if exist "$(OUT)" rmdir /s /q "$(OUT)"
-else
-  MKDIR_OUT = mkdir -p $(OUT)
-  RMDIR_OUT = rm -rf $(OUT)
-endif
-
 .PHONY: all test headless preview board-check clean help
 all: headless
 
@@ -27,7 +16,7 @@ help:
 	@echo "make clean       删除 build/ 及全部中间产物"
 
 $(OUT):
-	$(MKDIR_OUT)
+	mkdir -p $(OUT)
 
 headless: $(OUT)/danmaku-headless
 $(OUT)/danmaku-headless: $(CORE) $(DRAW) platform/host_main.c include/game.h include/assets.h include/render.h | $(OUT)
@@ -52,4 +41,4 @@ board-check:
 
 # Removes every generated artifact. No source, docs or assets are touched.
 clean:
-	$(RMDIR_OUT)
+	rm -rf $(OUT)

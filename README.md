@@ -64,6 +64,7 @@
 
 | 用途 | 依赖 |
 |---|---|
+| 运行环境 | **Linux**（已验证）；Windows 需要 WSL 或 MSYS2 shell |
 | 构建与测试 | C11 编译器（GCC/Clang）、GNU Make |
 | 电脑试玩 | 上述 + SDL2 开发库（仅窗口与按键，图形全部由本项目绘制） |
 | 素材重新生成 | Python 3 + Pillow（仅电脑端，板卡不需要） |
@@ -87,8 +88,8 @@ make preview
 ./build/danmaku-preview
 ```
 
-> `preview` 目标通过 `pkg-config` 定位 SDL2，需要在 WSL 或 MSYS2 shell 中执行。
-> `make test`、`make headless`、`make clean` 在 Windows 原生 `make` 下可直接使用。
+> 本项目在 **Linux** 上开发与验证。`Makefile` 使用 POSIX 命令（`mkdir -p`、`rm -rf`、`pkg-config`），
+> Windows 请在 WSL 或 MSYS2 shell 中运行，不要从 PowerShell / cmd 直接调用 `make`。
 
 ### 无窗口运行并导出画面
 

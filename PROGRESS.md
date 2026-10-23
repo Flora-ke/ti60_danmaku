@@ -54,14 +54,15 @@ Hash用于判断相同输入的逻辑重放一致，不是性能分数。低档�
 
 新增 `make clean` 目标，并扩充 `.gitignore` 覆盖 `build/`、目标文件、`*.ppm`、Python 缓存与编辑器目录。
 
-### 发现并修正的构建问题
+### 关于构建平台（重要）
 
-原 `Makefile` 使用 `mkdir -p` 与 `rm -rf`。在 Windows 原生 `make`（配方经 `cmd.exe` 执行）下：
+本项目在 **Linux** 上开发并验证。`Makefile` 使用 POSIX 命令（`mkdir -p`、`rm -rf`、`pkg-config`）。
+Windows 上必须在 WSL 或 MSYS2 shell 中运行；Windows 原生 `make` 的配方经 `cmd.exe` 执行，
+`mkdir -p` 会多建一个名为 `-p` 的目录，`rm -rf` 也会因缺少 `rm` 而失败。
 
-- `mkdir -p build` 会额外生成一个名为 `-p` 的空目录；
-- `rm -rf` 因 `rm` 不存在而报错，`clean` 无法工作。
-
-已改为按 `$(OS)` 选择命令，Windows 分支显式调用 `cmd /c`，因此无论 `make` 使用 `cmd.exe` 还是 `sh.exe` 都能正确执行；Linux/CI 仍走 POSIX 分支。
+整理过程中曾把 `Makefile` 改成按 `$(OS)` 分支、在 Windows 上调用 `cmd /c`。
+该改动偏离了项目的实际验证环境，**已全部撤回**，恢复为纯 POSIX 版本。
+游戏逻辑、渲染代码、素材与测试均未受影响。
 
 ### 新增文件
 
@@ -78,9 +79,16 @@ Hash用于判断相同输入的逻辑重放一致，不是性能分数。低档�
 
 ### 本轮实际通过的检查
 
-1. Windows 11 + MSYS2 GCC 15.2.0（`cc`），`make test`：三组单元测试全部通过，输出与整理前一致（`sizeof(Game)=11592`，三档哈希 `92a8ac9d` / `c243e458` / `5bdafcac`）。
-2. `make headless` 构建通过。
-3. `make clean` 连续执行两次均成功，执行后目录内无 `.exe`/`.o`/`build/` 残留，无 `-p` 类异常目录。
+1. 按 `test` 目标中的三条命令逐条执行（`cc` GCC 15.2.0，`-O2 -std=c11 -Wall -Wextra -Werror -pedantic`），三组单元测试全部通过，输出与整理前一致：`sizeof(Game)=11592`，三档哈希 `92a8ac9d` / `c243e458` / `5bdafcac`。
+2. 三个测试程序的编译与运行退出码均为 0。
+
+### 本轮未能在本机验证的项
+
+- **`make` 目标本身未能在本机执行**。当前 Windows 环境没有可用的 POSIX shell：
+  MSYS2 的 `make.exe`、`rm.exe`、`mkdir.exe` 在受限沙箱中无法启动
+  （`couldn't create signal pipe`），WSL 亦不可用。
+  因此改为逐条执行 `Makefile` 中的等价命令完成验证。
+  `Makefile` 已恢复为原项目的 POSIX 形式，其在 Linux 上的可运行性由用户验证。
 
 ### 本轮未验证
 
