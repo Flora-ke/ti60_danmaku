@@ -225,4 +225,3 @@ ti60_danmaku/
 ## 致谢
 
 - 角色素材与玩法灵感：[UET_Danmaku](https://github.com/cusnaruto/UET_Danmaku)
-- BSP 与工具链：Efinix Sapphire SoC / 一生一芯学习框架
