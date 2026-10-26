@@ -2,7 +2,8 @@
  * Requires exclusive ownership of [0x1000, 0x201000), DDR ready before _start,
  * and a RAM loader honoring all LOAD sections. Not a Flash/XIP layout.
  * Startup symbols match the existing newSoC standalone/common/start.S.
- * No ELF has been linked or loaded using this script in this delivery. */
+ * tools/build_sapphire.py checks the actual ELF LOAD ranges and owned BSS.
+ * Building this RAM layout does not initialize DDR or load a board. */
 OUTPUT_ARCH("riscv")
 ENTRY(_start)
 MEMORY { ram (rwx) : ORIGIN = 0x1000, LENGTH = 2M }

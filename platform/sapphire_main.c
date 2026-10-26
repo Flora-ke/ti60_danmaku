@@ -1,8 +1,14 @@
-/* Actual newSoC Sapphire BSP entry. This is CPU rendering, not G2D. */
+/* Actual newSoC Sapphire BSP entry. CPU and G2D paths are selected at build
+ * time; the G2D path never falls back to CPU drawing after initialization. */
 #include "game.h"
 #include "render.h"
+#include "g2d_scene.h"
 #include "board_port.h"
 #include "bsp.h"
+
+#if defined(BOARD_G2D_ADAPTER_EXTERNAL) && defined(RAM_ONLY_DIAGNOSTIC)
+#error BOARD_G2D_ADAPTER_EXTERNAL and RAM_ONLY_DIAGNOSTIC are mutually exclusive
+#endif
 
 #if BSP_CLINT_HZ < 1000
 #error BSP_CLINT_HZ must describe the actual monotonic timer frequency
@@ -10,9 +16,12 @@
 
 static Game game;
 static BoardInput input;
-/* Linker must reserve these in initialized DDR, never the default 124 KiB map.
- * Separate rows preserve 64-byte cache-line alignment of both buffers. */
+/* CPU path buffers only. The G2D adapter owns its physical frame slots. */
+#ifndef BOARD_G2D_ADAPTER_EXTERNAL
 static uint16_t frames[2][GAME_WIDTH * GAME_HEIGHT] __attribute__((aligned(64)));
+static GameCpuRenderer cpu_renderer;
+_Alignas(max_align_t) static unsigned char cpu_workspace[GFX_CPU_CONTEXT_BYTES_BOUND(GAME_DRAW_CAPACITY)];
+#endif
 volatile int board_game_error;
 volatile unsigned board_uart_timeout;
 
@@ -43,7 +52,6 @@ static void log_hex(uint32_t value)
     for (shift = 28; shift >= 0; shift -= 4)
         if (!put_char(hex[(value >> shift) & 15u])) return;
 }
-#ifndef RAM_ONLY_DIAGNOSTIC
 static void fail_stop(int error, const char *message)
 {
     board_game_error = error;
@@ -51,7 +59,6 @@ static void fail_stop(int error, const char *message)
     /* Preserve buffers/state. No resetting DMA or overwriting in-flight data. */
     for (;;) { }
 }
-#endif
 static uint32_t poll_keys(uint64_t ticks)
 {
     unsigned budget;
@@ -79,12 +86,27 @@ int main(void)
 {
     uint64_t previous, now, elapsed, logic_acc = 0, draw_acc = 0, last_log;
     uint32_t rendered = 0, late = 0, keys;
-    unsigned index = 0, steps;
+    unsigned steps;
+#ifdef BOARD_G2D_ADAPTER_EXTERNAL
+    uint32_t g2d_frame_id = 0;
+    GameG2dSink g2d_sink = {0, board_g2d_submit};
+#else
+    unsigned index = 0;
+#endif
     int result;
     bsp_init();
     board_input_init(&input, (uint16_t)(GKEY_LEFT | GKEY_RIGHT | GKEY_UP | GKEY_DOWN |
-                     GKEY_FIRE | GKEY_START | GKEY_PAUSE | GKEY_DEMO | GKEY_LEVEL));
-    log_text("Ti60 Danmaku: CPU RGB565 renderer, CLINT pacing, UART snapshots.\r\n");
+                     GKEY_FIRE | GKEY_START | GKEY_PAUSE | GKEY_DEMO | GKEY_LEVEL | GKEY_DIFFICULTY));
+    log_text("Ti60 Danmaku: CLINT pacing, UART snapshots.\r\n");
+#ifdef BOARD_G2D_ADAPTER_EXTERNAL
+    log_text("Renderer: G2D scene commands.\r\n");
+    result = board_g2d_init();
+    if (result != BOARD_OK)
+        fail_stop(result, "STOP: G2D adapter unavailable/failed.\r\n");
+#else
+    log_text("Renderer: common gfx commands -> CPU context (no frame allocations).\r\n");
+    result=game_cpu_renderer_init(&cpu_renderer,cpu_workspace,sizeof(cpu_workspace));
+    if(result!=GFX_OK) fail_stop(result,"STOP: common CPU context init failed.\r\n");
 #ifdef RAM_ONLY_DIAGNOSTIC
     log_text("RAM_ONLY_DIAGNOSTIC: NO VIDEO OUTPUT. Frames stay in DDR.\r\n");
     result = BOARD_OK;
@@ -93,8 +115,9 @@ int main(void)
     if (result != BOARD_OK)
         fail_stop(result, "STOP: video adapter unavailable/failed; no interactive game started.\r\n");
 #endif
+#endif
     (void)result;
-    game_init(&game, GMODE_DEMO, 256u);
+    game_init(&game, GMODE_PLAY, 256u);
     last_log = previous = now_ticks();
     for (;;) {
         now = now_ticks();
@@ -113,6 +136,20 @@ int main(void)
         if (logic_acc >= BSP_CLINT_HZ) { logic_acc %= BSP_CLINT_HZ; ++late; }
         if (draw_acc >= BSP_CLINT_HZ) {
             draw_acc %= BSP_CLINT_HZ;
+#ifdef BOARD_G2D_ADAPTER_EXTERNAL
+            result = board_g2d_acquire(&g2d_frame_id);
+            if (result != BOARD_OK)
+                fail_stop(result, "STOP: G2D frame acquire failed.\r\n");
+            result = game_render_g2d(&game, g2d_frame_id, &g2d_sink);
+            if (result != BOARD_OK)
+                fail_stop(result, "STOP: G2D scene submission failed.\r\n");
+            result = board_g2d_wait(g2d_frame_id);
+            if (result != BOARD_OK)
+                fail_stop(result, "STOP: G2D frame completion failed.\r\n");
+            result = board_g2d_present(g2d_frame_id);
+            if (result != BOARD_OK)
+                fail_stop(result, "STOP: G2D frame present failed.\r\n");
+#else
 #ifdef RAM_ONLY_DIAGNOSTIC
             index ^= 1u;
 #else
@@ -121,11 +158,13 @@ int main(void)
                 fail_stop(result == BOARD_OK ? BOARD_ERROR : result,
                           "STOP: video acquire failed/invalid ownership index.\r\n");
 #endif
-            game_render(&game, frames[index], GAME_WIDTH);
+            result=game_render_cpu(&cpu_renderer,&game,frames[index],GAME_WIDTH,GAME_WIDTH*GAME_HEIGHT,0);
+            if(result!=GFX_OK) fail_stop(result,"STOP: common command build/CPU execution failed; no present.\r\n");
 #ifndef RAM_ONLY_DIAGNOSTIC
             result = board_video_present(index);
             if (result != BOARD_OK)
                 fail_stop(result, "STOP: video present failed; state preserved.\r\n");
+#endif
 #endif
             ++rendered;
         }
@@ -138,6 +177,10 @@ int main(void)
             log_text(" late="); log_hex(late);
             log_text(" hash="); log_hex(game_hash(&game));
             log_text(" rx="); log_hex(input.accepted);
+#ifndef BOARD_G2D_ADAPTER_EXTERNAL
+            log_text(" commands="); log_hex((uint32_t)cpu_renderer.frame.count);
+            log_text(" command_peak="); log_hex((uint32_t)cpu_renderer.peak_commands);
+#endif
 #ifdef RAM_ONLY_DIAGNOSTIC
             /* Read completed RAM pixels so telemetry proves rendering happened,
              * including with link-time optimization. This adds diagnostic cost. */

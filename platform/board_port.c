@@ -74,3 +74,28 @@ int board_video_init(uint16_t *buffer0, uint16_t *buffer1,
 int board_video_acquire(unsigned *index) { (void)index; return BOARD_UNAVAILABLE; }
 int board_video_present(unsigned index) { (void)index; return BOARD_UNAVAILABLE; }
 #endif
+
+#ifndef BOARD_G2D_ADAPTER_EXTERNAL
+int board_g2d_init(void) { return BOARD_UNAVAILABLE; }
+int board_g2d_acquire(uint32_t *frame_id)
+{
+    (void)frame_id;
+    return BOARD_UNAVAILABLE;
+}
+int board_g2d_submit(void *context, const GameG2dCommand *command)
+{
+    (void)context;
+    (void)command;
+    return BOARD_UNAVAILABLE;
+}
+int board_g2d_wait(uint32_t frame_id)
+{
+    (void)frame_id;
+    return BOARD_UNAVAILABLE;
+}
+int board_g2d_present(uint32_t frame_id)
+{
+    (void)frame_id;
+    return BOARD_UNAVAILABLE;
+}
+#endif

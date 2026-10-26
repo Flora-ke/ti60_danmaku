@@ -1,219 +1,95 @@
 # Ti60 芙兰弹幕演示程序
 
-纯 C 实现的单 Boss 弹幕游戏，面向 Ti60 / Sapphire SoC（100 MHz、RV32IM、256 MiB DDR、400×300 RGB565）。
+纯 C 单 Boss 游戏：固定 60Hz 逻辑、Q8 定点、512 敌弹／64 玩家弹对象池。游戏生成有序公共 `gfx_command`，电脑版由公共 CPU 后端执行；Sapphire 版已接入同级 `bitblt-runtime` 的真实 G2D／FRM 显示会话，支持键盘 **1／2／3** 切换执行路径。库源码直接引用，没有复制成游戏私有分支。
 
-固定对象池、Q8 定点运算、离线内嵌图片，**无堆分配、无浮点、无运行时解码、无文件系统**。
+游戏逻辑仍为 400×300，板端在 640×480 RGB565 画布的 `(120,90)` 居中显示，不缩放、不减少子弹。当前已完成主机验证和 RAM ELF 交叉构建，尚未在实板运行；板上位流、DDR 初始化与源码匹配仍须现场确认。没有自动连接串口、加载程序或烧写。
 
-> **当前状态：可以在电脑上完整运行；已通过真实 BSP 的 RV32 源码检查；当前硬件位流尚不能出屏。**
->
-> 详见 [当前状态](#当前状态) 与 [PROGRESS.md](PROGRESS.md)。
+## 板端三种模式
 
----
-
-## 目录
-
-- [这是什么](#这是什么)
-- [当前状态](#当前状态)
-- [快速开始](#快速开始)
-- [操作说明](#操作说明)
-- [弹幕档位与内存预算](#弹幕档位与内存预算)
-- [板端集成](#板端集成)
-- [项目结构](#项目结构)
-- [文档](#文档)
-- [许可证与素材](#许可证与素材)
-
----
-
-## 这是什么
-
-一个从零重写的板端弹幕游戏，不是对原 C++ 游戏的移植。
-
-它借用 [UET_Danmaku](https://github.com/cusnaruto/UET_Danmaku) 的角色素材与「放射＋扫射」玩法设计，把原本基于 C++ ECS + SDL2 的实现改写为固定容量 C 程序：整数方向表替代浮点角度，固定数组替代动态容器，离线 RGB565 素材替代运行时贴图加载。
-
-因此**不宣称与原游戏逐帧一致**：多 Boss 流程、音频、完整菜单均未移植。
-
-设计目标是为 RISC-V + FPGA 图形平台提供一个可控、可测、内存可预算的绘图负载。
-
-## 当前状态
-
-### 已经能做的
-
-- 电脑端完整可玩：手动模式、自动演示、暂停、重开、胜负判定、三档弹幕强度
-- 严格 C11 构建通过（`-O2 -Wall -Wextra -Werror -pedantic`）
-- 三组单元测试通过：游戏逻辑确定性、渲染越界保护、UART 协议
-- 使用真实 newSoC BSP 头文件做 RV32 `-fsyntax-only` 源码检查通过
-- 离线素材生成可重复（SHA-256 校验一致）
-
-### 还不能做的
-
-**当前位流不能出屏。** 已核对的 `bitblt_soc-main/src/g2d/g2d_controller.v` 与 `displayopt_controller.v` 中，启动信号仍固定为零，顶层显示 FIFO 没有消费者。软件无法补出缺失的视频链路。
-
-因此默认板端入口遇到未接通的显示适配器时会**记录错误并停止**，不会假装已显示。显式的 `RAM_ONLY_DIAGNOSTIC` 模式可做游戏逻辑与 RAM 绘图的板端集成，但仍需正确的 DDR 启动/加载流程。
-
-**尚未进行任何板测**：未接串口实物、未生成板端 ELF、未烧写 FPGA 或 Flash、未测量板上帧率。
-
-### 关于「FPGA 加速」
-
-当前 renderer 只做 **CPU 参考绘图**。代码中没有任何 G2D 寄存器地址、命令或缓存指令的猜测实现。
-
-把 CPU 绘图换成硬件绘制，必须依据实际验收后的 G2D ABI 另行接入，不能把 CPU 运行结果冒充 FPGA 加速。
-
-## 快速开始
-
-### 环境要求
-
-| 用途 | 依赖 |
+| 按键 | 实际路径 |
 |---|---|
-| 运行环境 | **Linux**（已验证）；Windows 需要 WSL 或 MSYS2 shell |
-| 构建与测试 | C11 编译器（GCC/Clang）、GNU Make |
-| 电脑试玩 | 上述 + SDL2 开发库（仅窗口与按键，图形全部由本项目绘制） |
-| 素材重新生成 | Python 3 + Pillow（仅电脑端，板卡不需要） |
-| 串口操作桥 | Python 3 + 可选 `pyserial` |
+| **1 CPU**（默认） | 同一完整场景由 CPU 画入自有 640×480 RAM，再经 G2D 全屏 Copy 搬到硬件分配的显示帧。它仍使用 G2D 进行显示搬运。 |
+| **2 G2D** | 完整 Fill／Copy／CopyKey 命令由硬件执行，经 END、FRM 呈现和扫描健康确认。不会回退到 CPU 画图。 |
+| **3 比较** | 冻结一份场景命令，先发布 CPU 结果，再发布原生 G2D 结果；两帧内容相同，依次呈现，串口分别统计。 |
 
-### 构建与测试
+模式切换在当前任务完整结束后生效，不重置游戏或硬件会话。比较模式不是并排显示；没有输出未经实板测量的加速比。画面应保持一致，可从串口 `mode/req/shown/pair/gpu_frame` 确认切换。
+
+## 构建 RAM 固件
+
+在已有裸机工具链的 WSL／Linux 中执行：
 
 ```sh
-make test        # 编译并运行三组单元测试
-make headless    # 构建无窗口版
-make clean       # 删除 build/ 与全部中间产物
-make help        # 列出所有目标
+cd /mnt/d/Desktop/2026FPGA/ti60_danmaku
+make board
+# 同等入口；路径不在默认位置时可显式覆盖：
+python3 tools/build_sapphire.py \
+ --gfx-root /mnt/d/Desktop/2026FPGA/bitblt-runtime \
+ --soc-root /mnt/d/Desktop/2026FPGA/bitblt_soc-ysl-dev/embedded_sw/newSoC \
+ --riscv-bin /mnt/d/Desktop/2026FPGA/bitblt-runtime/build/toolchains/xpack-riscv-none-elf-gcc-14.2.0-3/bin/riscv-none-elf-
 ```
 
-### 电脑试玩
+默认构建匹配 `bitblt_soc-ysl-dev/embedded_sw/newSoC` 的 BSP、启动文件与 C 库，产物在 `build/sapphire/`：`ti60_danmaku.elf`、map、bin、hex、asm 和 `build_manifest.json`。这些是 RAM 加载产物，不是 Flash／XIP 固件。构建脚本核对发布合同涉及的 12 个硬件／BSP文件哈希、ELF 架构、LOAD 范围、自有 DMA 数组、栈及发布指令；构建期间源码变化或硬件指纹不匹配即拒绝。
 
-需要 SDL2 开发库：
+程序独占 `[0x1000,0x201000)` 的 2MiB 应用 DDR，其中栈为 64KiB；DMA 素材 252672B、自有 CPU 画布 614400B、CPU 工作区 90112B、G2D 工作区预留 128512B（精确需求 126504B）。一次实际链接占用 1565248B，约 74.64%；最终结果以本次 `build/sapphire/build_manifest.json` 的 `memory_bytes_from_origin` 为准，包含代码、数据、BSS、对齐与栈。硬件 A/B 帧由硬件拥有，未在应用内分配两份显示帧，也不由 CPU 直接写入。
+
+加载前须确认匹配普通 CPU 位流、DDR 已初始化、整个应用区独占，并处于 CPU／G2D／显示协调冷态。具体流程、所有权和故障限制见[板卡接入](docs/板卡接入.md)。构建成功不代表板测通过。
+
+## 键盘控制板卡
+
+Windows PowerShell 中运行以下电脑端工具；COM6 仅为示例，请换成真实端口，先关闭占用同一串口的终端。
+
+```powershell
+cd D:\Desktop\2026FPGA\ti60_danmaku
+py tools/uart_bridge.py --self-test
+# 如电脑环境尚无 pyserial，先在该 Python 环境安装：
+py -m pip install pyserial
+py tools/uart_bridge.py --port COM6
+```
+
+Windows 默认采样启动时前台终端的真实按下／松开，支持同时按键；失焦立即发送全松开。方向键或 WASD 移动，按住 Z／空格射击，Enter／R 开始或重开，P 暂停，M 演示，K 弹幕强度，N 新手／标准，1／2／3 切换绘图模式，Q／Esc／Ctrl+C 退出控制端并尽力发送释放报文。显示端不会因控制端退出自动停显。
+
+Linux 可用 `python3 tools/uart_bridge.py --port /dev/ttyUSB0`；终端输入依赖 180ms 重复键租约，无法提供真实松键，空格切换持续射击。Windows 也可加 `--terminal` 使用该方式。桥只发送统一按键快照和显示遥测，不下载或烧写固件。协议为 115200/8N1、8 字节 CRC 帧、13 位允许位图；完整定义见[板卡接入](docs/板卡接入.md)。
+
+## 电脑试玩与难度
 
 ```sh
+cd /mnt/d/Desktop/2026FPGA/ti60_danmaku
 make preview
 ./build/danmaku-preview
 ```
 
-> 本项目在 **Linux** 上开发与验证。`Makefile` 使用 POSIX 命令（`mkdir -p`、`rm -rf`、`pkg-config`），
-> Windows 请在 WSL 或 MSYS2 shell 中运行，不要从 PowerShell / cmd 直接调用 `make`。
+需要 SDL2 开发库。电脑版只执行 CPU 绘图；按 2／3 会明确提示需要 Sapphire FPGA，`--backend 2/3` 返回错误，不模拟硬件。默认新手标题界面，Enter 开始，方向键移动，N 在标题／胜负界面选择配置；P 暂停，Tab 切换弹幕强度，D 自动演示，Esc 退出。
 
-### 无窗口运行并导出画面
+| 手动配置 | 初始生命 | 受伤保护 | 射击 |
+|---|---:|---:|---|
+| 新手（默认） | 10 | 180 tick／3 秒 | 自动 |
+| 标准 | 3 | 120 tick／2 秒 | 按键 |
 
-```sh
-make headless
-./build/danmaku-headless --frames 1200 --limit 512 --ppm build/frame.ppm
-```
+参数集中在 `src/game.c` 的 `GamePlayConfig`。难度与低／中／高弹幕强度独立：低／中上限128／256、每12tick发射，高上限512、每6tick发射，均为20环形＋2扫射。受伤不清弹幕，判定仍为小判定点；保护期角色始终可见并有青／白闪框和 HUD 提示。暂停冻结逻辑、保护及冷却；重开保留所选难度、清除上一局对象。DEMO独立保持60秒确定性无敌演示。
 
-### 串口桥自测
+此前固定输入测试中新手参与约30～42秒、标准约6.5～7.8秒，十二组最终均失败；不是新人真人试玩或通关保证。体验参数可集中调整，不以减少弹幕改善性能。
 
-```sh
-python tools/uart_bridge.py --self-test
-```
-
-## 操作说明
-
-| 按键 | 作用 |
-|---|---|
-| `Enter` / `R` | 进入手动模式 / 重新开始 |
-| 方向键 | 移动 |
-| `Z` / 空格 | 射击 |
-| `P` | 暂停 |
-| `D` | 自动演示 |
-| `Tab` | 切换弹幕强度 |
-| `Esc` | 退出 |
-
-默认播放一轮 60 秒自动演示。手动模式 3 命，受伤后 2 秒无敌；击败 Boss 则胜利。
-
-自动演示中玩家无敌、自动移动与射击，Boss 不会提前死亡，时间到显示 `FINISHED`。
-
-## 弹幕档位与内存预算
-
-| 档位 | 发射周期（60 Hz 逻辑） | 敌弹上限 | 60 秒演示实测峰值 | 丢弃新敌弹 |
-|---|---|---:|---:|---:|
-| 低 | 12 tick / 200 ms | 128 | 128 | 2925 |
-| 中（默认） | 12 tick / 200 ms | 256 | 235 | 0 |
-| 高 | 6 tick / 100 ms | 512 | 458 | 0 |
-
-每轮 20 颗星形放射 ＋ 2 颗扫射。上限不是同屏数量的保证。
-
-低档**有意展示容量限制**：达到上限后丢弃新弹并计数，绝不无限分配。玩家弹另有 64 个槽位。
-
-| 固定数据 | 字节数 |
-|---|---:|
-| RGB565 素材像素 | 244 284 |
-| 双帧缓冲 | 480 000 |
-| 游戏对象（含全部弹池） | 11 592 |
-| RV32 精灵元数据 | 64 |
-| **小计** | **735 940**（约 718.7 KiB） |
-
-小计不含代码、字符串、查表、串口状态和栈。最终总量仍须链接 map 核实。
-
-项目提供独占 2 MiB DDR 的应用布局与 64 KiB 栈；默认 124 KiB 应用区**不能沿用**。没有给 DMA 或显示发明固定帧地址。
-
-## 板端集成
-
-入口为 `platform/sapphire_main.c`，使用实际 newSoC BSP 的 CLINT 与 UART，目标 60 Hz 逻辑、30 Hz 绘图。帧缓冲静态分配且 64 字节对齐。
-
-要点：
-
-- 编译公共源 `src/game.c` `src/render.c` `assets/assets.c` `platform/board_port.c` `platform/sapphire_main.c`，**排除 host 入口**。
-- 复用同一硬件导出的 `embedded_sw/newSoC` BSP、C 库与 `software/standalone/common/start.S`，RV32IM/Zicsr 软浮点 ABI。BSP 使用 GNU `asm`，需要 `gnu11`。
-- `platform/game_ddr.ld` 提供独占 `[0x1000, 0x201000)` 的 2 MiB RAM 加载布局与启动符号；**该脚本未链接验证**。
-- 当前位流只能先选择 `RAM_ONLY_DIAGNOSTIC`。
-- 出屏需要显示 RTL 完成并提供 `BOARD_VIDEO_ADAPTER_EXTERNAL` 实现；当前默认明确返回 `BOARD_UNAVAILABLE`。
-
-源码级检查（需要本机的 RISC-V 工具链与 BSP 路径）：
+## 验证与阅读
 
 ```sh
-make board-check \
-  RISCV_CC=/path/to/riscv-none-elf-gcc \
-  SOC_ROOT=/path/to/bitblt_soc-main/embedded_sw/newSoC
+make test headless preview
+make test-hardware
+./build/danmaku-headless --demo --limit 512 --frames 3600 --ppm build/frame.ppm
+python3 tools/validate.py
 ```
 
-`board-check` **仅做源码语法检查**，不生成 ELF、不下载、不烧写。
+游戏命令容量864条，满512敌弹＋64玩家弹及完整HUD／覆盖界面最重组合814条；不漏画已存在子弹。新硬件集成主机检查覆盖39场景全640×480画布、12帧软件解码硬件命令像素对比、同一会话跨1／2／3切换、三次高档完整演示5400个任务和2819052条硬件协议命令退休，零分配。包含第3600tick结束界面的演示峰值601条；此前552是不同抽样边界，不能当作当前完整演示上限。这些是主机像素／协议证据，不是板上像素或性能结果。
 
-完整接口契约、UART 报文格式与限制见 [板卡接入](docs/板卡接入.md)。
+- [实际验证记录](PROGRESS.md)
+- [公共命令、生命周期与测量口径](docs/公共绘图接口.md)
+- [板卡构建、输入、所有权及故障处理](docs/板卡接入.md)
+- [逐文件阅读指南](docs/代码阅读指南.md)
+- [新手体验记录](tests/experience_report.md)、[素材说明](docs/素材说明.md)
 
-## 项目结构
-
-```text
-ti60_danmaku/
-├── include/            公共头文件
-│   ├── game.h          坐标、按键、状态与对象池定义
-│   ├── render.h        CPU 绘图接口契约
-│   ├── assets.h        精灵元数据（宽高、像素指针、透明色）
-│   └── board_port.h    UART 协议与视频适配器契约
-├── src/
-│   ├── game.c          固定容量游戏逻辑，与平台无关
-│   └── render.c        RGB565 CPU 参考渲染
-├── assets/
-│   ├── assets.c        离线生成的 const 像素数组（第三方素材，见 NOTICE）
-│   └── manifest.json   尺寸、字节数、来源哈希、色键统计
-├── platform/
-│   ├── host_main.c     SDL2 窗口预览 / 无窗口 PPM 导出
-│   ├── sapphire_main.c 真实 BSP 入口：UART、CLINT、双缓冲
-│   ├── board_port.c    UART 帧解析、CRC、断线释放（可脱离 BSP 测试）
-│   └── game_ddr.ld     2 MiB DDR 应用布局（未链接验证）
-├── tests/
-│   ├── test_game.c     逻辑确定性、上限、碰撞、计时回绕
-│   ├── test_render.c   越界、负坐标、非紧凑 stride
-│   └── test_board_uart.c CRC、坏帧、重同步、超时释放
-├── tools/
-│   ├── convert_assets.py 离线素材转换（裁切、缩放、RGB565）
-│   ├── uart_bridge.py     电脑端串口操作桥
-│   └── validate.py        本机综合校验脚本
-├── docs/               设计文档
-├── Makefile
-├── PROGRESS.md         实现与验证记录（含实测数据）
-├── NOTICE              第三方素材声明
-└── LICENSE             MIT
-```
-
-## 文档
-
-| 文档 | 内容 |
-|---|---|
-| [文档索引](docs/README.md) | 全部文档的导读顺序 |
-| [代码阅读指南](docs/代码阅读指南.md) | 每个文件负责什么、调用链怎么走 |
-| [板卡接入](docs/板卡接入.md) | BSP 事实、DDR/栈集成、视频适配器契约、UART 协议 |
-| [素材说明](docs/素材说明.md) | 素材来源、裁切参数、转换规则、重复生成 |
-| [PROGRESS.md](PROGRESS.md) | 实际通过的检查、实测哈希、未完成范围 |
+保留的 `g2d_scene.[ch]`、旧 `BOARD_G2D_ADAPTER_EXTERNAL` 及 `platform/sapphire_main.c` 属于历史路径；当前板端推荐 `platform/accelerated_main.c` 和 `make board`。旧入口可继续用于显式 RAM 诊断，不应当作本轮真实加速接口。
 
 ## 许可证与素材
+
 
 - **源代码**：[MIT](LICENSE) © 2026 WangKechun
 - **素材**：`assets/` 下的像素数据来自 [UET_Danmaku](https://github.com/cusnaruto/UET_Danmaku)，
@@ -221,7 +97,3 @@ ti60_danmaku/
   详见 [NOTICE](NOTICE)。
 
 如需干净的授权状态，可删除 `assets/assets.c` 与 `assets/manifest.json`，用 `tools/convert_assets.py` 从你持有授权的图片重新生成。
-
-## 致谢
-
-- 角色素材与玩法灵感：[UET_Danmaku](https://github.com/cusnaruto/UET_Danmaku)

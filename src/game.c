@@ -19,11 +19,31 @@ static uint32_t preset(uint32_t limit)
     return limit <= 128u ? 128u : (limit <= 256u ? 256u : 512u);
 }
 
+/* All play-experience settings live here; bullet/pacing/render settings do not. */
+static const GamePlayConfig play_configs[2] = {
+    {10u, 180u, 1u}, {3u, 120u, 0u}
+};
+static const GamePlayConfig demo_config = {3u, 120u, 1u};
+
+const GamePlayConfig *game_play_config(const Game *g)
+{
+    if (g && g->mode == GMODE_DEMO) return &demo_config;
+    return &play_configs[g && g->difficulty == GDIFFICULTY_STANDARD ? 1 : 0];
+}
+
 void game_init(Game *g, GameMode mode, uint32_t limit)
+{
+    game_init_config(g, mode, limit, GDIFFICULTY_BEGINNER);
+}
+
+void game_init_config(Game *g, GameMode mode, uint32_t limit,
+                      GameDifficulty difficulty)
 {
     if (!g) return;
     memset(g, 0, sizeof(*g));
     g->mode = mode == GMODE_DEMO ? GMODE_DEMO : GMODE_PLAY;
+    g->difficulty = difficulty == GDIFFICULTY_STANDARD ?
+        GDIFFICULTY_STANDARD : GDIFFICULTY_BEGINNER;
     g->state = g->mode == GMODE_DEMO ? GSTATE_RUNNING : GSTATE_TITLE;
     g->enemy_limit = preset(limit);
     g->player_x = 146 * GAME_Q;
@@ -31,7 +51,7 @@ void game_init(Game *g, GameMode mode, uint32_t limit)
     g->boss_x = 146 * GAME_Q;
     g->boss_y = 48 * GAME_Q;
     g->hp = GAME_BOSS_HP;
-    g->lives = 3;
+    g->lives = game_play_config(g)->starting_lives;
 }
 
 static int32_t clamp(int32_t x, int32_t lo, int32_t hi)
@@ -123,7 +143,7 @@ static void move_bullets(Game *g)
                    overlap(b->x, b->y, g->player_x, g->player_y, 4)) {
             b->active = 0; --g->active_enemy;
             if (g->lives) --g->lives;
-            g->invulnerable = 120;
+            g->invulnerable = game_play_config(g)->hurt_invulnerable_ticks;
             if (!g->lives) g->state = GSTATE_LOST;
         }
     }
@@ -172,7 +192,7 @@ void game_step(Game *g, uint32_t keys)
 {
     uint32_t edge;
     if (!g) return;
-    keys &= (1u << 9) - 1u;
+    keys &= (1u << 10) - 1u;
     edge = keys & ~g->prev_keys;
     g->prev_keys = keys;
     if (edge & (GKEY_DEMO | GKEY_LEVEL | GKEY_START)) {
@@ -181,9 +201,18 @@ void game_step(Game *g, uint32_t keys)
         if (edge & GKEY_DEMO) mode = GMODE_DEMO;
         else if (edge & GKEY_LEVEL) limit = limit == 128 ? 256 : (limit == 256 ? 512 : 128);
         else mode = GMODE_PLAY;
-        game_init(g, mode, limit);
+        game_init_config(g, mode, limit, g->difficulty);
         g->prev_keys = keys; /* Held commands cannot repeatedly reset. */
         if (!(edge & GKEY_LEVEL) || (edge & GKEY_DEMO)) g->state = GSTATE_RUNNING;
+        return;
+    }
+    if ((edge & GKEY_DIFFICULTY) &&
+        (g->state == GSTATE_TITLE || g->state == GSTATE_WON ||
+         g->state == GSTATE_LOST)) {
+        GameDifficulty difficulty = g->difficulty == GDIFFICULTY_BEGINNER ?
+            GDIFFICULTY_STANDARD : GDIFFICULTY_BEGINNER;
+        game_init_config(g, GMODE_PLAY, g->enemy_limit, difficulty);
+        g->prev_keys = keys;
         return;
     }
     if (edge & GKEY_PAUSE) {
@@ -200,7 +229,7 @@ void game_step(Game *g, uint32_t keys)
         emit(g);
         g->enemy_cooldown = g->enemy_limit == 512u ? 6 : 12;
     }
-    if (!g->fire_cooldown && ((keys & GKEY_FIRE) || g->mode == GMODE_DEMO)) {
+    if (!g->fire_cooldown && ((keys & GKEY_FIRE) || game_play_config(g)->auto_fire)) {
         shoot(g);
         g->fire_cooldown = 6;
     }
@@ -221,13 +250,19 @@ static uint32_t hash_word(uint32_t h, uint32_t word)
 uint32_t game_hash(const Game *g)
 {
     uint32_t h = 2166136261u, i;
+    const GamePlayConfig *config;
     if (!g) return 0;
 #define H(field) h = hash_word(h, (uint32_t)g->field)
     H(player_x); H(player_y); H(boss_x); H(boss_y); H(hp); H(lives);
     H(score); H(tick); H(active_enemy); H(active_player); H(dropped);
     H(peak_enemy); H(mode); H(state); H(enemy_limit); H(prev_keys);
     H(invulnerable); H(fire_cooldown); H(enemy_cooldown); H(ring_phase);
+    H(difficulty);
 #undef H
+    config = game_play_config(g);
+    h = hash_word(h, config->starting_lives);
+    h = hash_word(h, config->hurt_invulnerable_ticks);
+    h = hash_word(h, config->auto_fire);
     for (i = 0; i < GAME_ENEMY_CAP + GAME_PLAYER_CAP; ++i) {
         const Bullet *b = i < GAME_ENEMY_CAP ? &g->enemy[i] : &g->player[i - GAME_ENEMY_CAP];
         h = hash_word(h, (uint32_t)b->x); h = hash_word(h, (uint32_t)b->y);

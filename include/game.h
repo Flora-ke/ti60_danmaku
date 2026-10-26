@@ -21,9 +21,17 @@ enum {
     GKEY_UP = 1u << 2, GKEY_DOWN = 1u << 3,
     GKEY_FIRE = 1u << 4, GKEY_START = 1u << 5,
     GKEY_PAUSE = 1u << 6, GKEY_DEMO = 1u << 7,
-    GKEY_LEVEL = 1u << 8
+    GKEY_LEVEL = 1u << 8, GKEY_DIFFICULTY = 1u << 9
 };
 typedef enum { GMODE_PLAY = 0, GMODE_DEMO = 1 } GameMode;
+typedef enum {
+    GDIFFICULTY_BEGINNER = 0, GDIFFICULTY_STANDARD = 1
+} GameDifficulty;
+typedef struct {
+    uint32_t starting_lives;
+    uint16_t hurt_invulnerable_ticks;
+    uint8_t auto_fire;
+} GamePlayConfig;
 typedef enum {
     GSTATE_TITLE = 0, GSTATE_RUNNING, GSTATE_PAUSED, GSTATE_WON, GSTATE_LOST
 } GameState;
@@ -43,6 +51,7 @@ typedef struct {
     uint32_t active_enemy, active_player, dropped, peak_enemy;
     GameMode mode;
     GameState state;
+    GameDifficulty difficulty;
     uint32_t enemy_limit;
     uint32_t prev_keys;
     uint16_t invulnerable, fire_cooldown, enemy_cooldown;
@@ -57,15 +66,27 @@ typedef struct {
  * contains twenty radial shots and two sweeping shots. Capacity is a hard cap.
  * PLAY starts at TITLE; DEMO starts immediately and ends after 3600 ticks.
  * hp is Boss HP. Demo is invulnerable; Boss HP stays >= 1 until time expires.
+ * game_init selects BEGINNER (10 lives, 180 hurt ticks, auto-fire).
+ * STANDARD has 3 lives, 120 hurt ticks and requires held FIRE.
+ * Demo independently uses 3 lives, auto-fire and complete invulnerability;
+ * selected difficulty is preserved for a later START into manual play.
  */
 void game_init(Game *game, GameMode mode, uint32_t limit);
+void game_init_config(Game *game, GameMode mode, uint32_t limit,
+                      GameDifficulty difficulty);
+
+/* Returns immutable static configuration; NULL selects the beginner profile. */
+const GamePlayConfig *game_play_config(const Game *game);
 
 /* Call exactly once per 1/60 s of simulated time. Movement/FIRE are held keys.
- * START, PAUSE, DEMO and LEVEL use rising edges, detected internally.
+ * START, PAUSE, DEMO, LEVEL and DIFFICULTY use rising edges internally.
  * START enters/restarts PLAY in RUNNING, including from demo, pause or end.
  * DEMO restarts in demo mode. LEVEL cycles 128/256/512 and resets all state
- * (PLAY returns to TITLE, DEMO runs). PAUSE toggles RUNNING/PAUSED.
- * Reset-command priority: DEMO > LEVEL > START > PAUSE.
+ * (PLAY returns to TITLE, DEMO runs). Both keep the selected difficulty.
+ * DIFFICULTY toggles BEGINNER/STANDARD only in TITLE/WON/LOST and clears the
+ * previous run into PLAY/TITLE; ignored while running or paused.
+ * PAUSE toggles RUNNING/PAUSED. Reset priority is DEMO > LEVEL > START >
+ * DIFFICULTY > PAUSE. Restart clears bullets, score, tick and protection.
  * Paused/title/end states do not advance tick, bullets or cooldowns.
  * Pixel-circle hit tests use truncated pixel centers: player radius 2,
  * enemy bullet radius 2, player shot radius 2, Boss radius 12.
@@ -73,7 +94,9 @@ void game_init(Game *game, GameMode mode, uint32_t limit);
  */
 void game_step(Game *game, uint32_t keys);
 
-/* Stable FNV-1a over explicitly serialized scalar fields (no struct padding). */
+/* Stable FNV-1a over explicitly serialized scalar fields (no struct padding).
+ * Includes difficulty/configuration: hashes differ from pre-profile versions
+ * even where demo simulation and bullet trajectories remain unchanged. */
 uint32_t game_hash(const Game *game);
 
 #endif

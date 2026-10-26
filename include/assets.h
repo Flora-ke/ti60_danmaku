@@ -3,7 +3,9 @@
 
 #include <stdint.h>
 
-/* Numeric RGB565. CPU renderer and future G2D must agree on this color key. */
+/* Raw numeric RGB565; complete 16-bit key, without alpha semantics.
+ * The uint16_t assets match GFX_RGB565_LE on little-endian PC/RV32.
+ * The command builder rejects big-endian hosts rather than reinterpreting them. */
 #define GAME_COLOR_KEY UINT16_C(0xF81F)
 
 typedef struct {
